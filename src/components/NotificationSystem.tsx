@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
-import { X, Bell, Coffee, Brain, Target } from 'lucide-react';
-import type { CognitiveState } from '../types';
+import { useEffect, useState, useCallback } from "react";
+import { X, Bell, Coffee, Brain, Target, Sparkles } from "lucide-react";
+import type { CognitiveState } from "../types";
 
 interface Notification {
   id: string;
-  type: 'fatigue' | 'focus' | 'confused' | 'system';
+  type: "fatigue" | "focus" | "confused" | "system";
   title: string;
   message: string;
   timestamp: number;
@@ -16,120 +16,263 @@ interface NotificationSystemProps {
 }
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Familjen+Grotesk:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Instrument+Serif:ital@1&display=swap');
+
+:root {
+  --ns-radius: 20px;
+  --ns-shadow-green: 0 8px 32px rgba(22,163,74,0.14), 0 2px 8px rgba(0,0,0,0.05);
+  --ns-shadow-red:   0 8px 32px rgba(220,38,38,0.14),  0 2px 8px rgba(0,0,0,0.05);
+  --ns-shadow-amber: 0 8px 32px rgba(217,119,6,0.14),  0 2px 8px rgba(0,0,0,0.05);
+  --ns-shadow-blue:  0 8px 32px rgba(37,99,235,0.14),  0 2px 8px rgba(0,0,0,0.05);
+}
 
 .ns-wrap {
-  position: fixed; top: 1.25rem; right: 1.25rem;
-  z-index: 50; display: flex; flex-direction: column; gap: .6rem;
-  max-width: 330px; width: calc(100vw - 2.5rem);
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 340px;
+  width: calc(100vw - 3rem);
+  font-family: 'Outfit', sans-serif;
+  pointer-events: none;
 }
 
+/* ── Card ── */
 .ns-card {
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  pointer-events: all;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem 0.9rem;
+  border-radius: var(--ns-radius);
+  border: 1.5px solid transparent;
   background: #ffffff;
-  border: 1.5px solid #d1fae5;
-  border-left: 4px solid transparent;
-  border-radius: 16px;
-  padding: .9rem 1rem;
-  display: flex; align-items: flex-start; gap: .75rem;
-  box-shadow: 0 4px 20px rgba(0,0,0,.08), 0 1px 4px rgba(0,0,0,.04);
-  animation: nsIn .38s cubic-bezier(.22,1,.36,1) both;
-  position: relative; overflow: hidden;
+  position: relative;
+  overflow: hidden;
+  animation: nsSlideIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.ns-card:hover {
+  transform: translateX(-4px) scale(1.01);
 }
 
-/* shimmer top edge */
+/* Accent bar left */
 .ns-card::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent);
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: var(--ns-radius) 0 0 var(--ns-radius);
 }
 
-/* timer bar bottom */
+/* Progress bar bottom */
 .ns-card::after {
-  content: ''; position: absolute; bottom: 0; left: 0;
-  height: 2.5px; width: 100%;
-  transform-origin: left; animation: nsTimer 8s linear both; border-radius: 0 0 16px 16px;
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  height: 2px;
+  width: 100%;
+  transform-origin: left;
+  animation: nsTimer 8s linear forwards;
+  border-radius: 0 0 var(--ns-radius) var(--ns-radius);
 }
 
-.ns-card.fatigue  { border-left-color: #dc2626; }
-.ns-card.fatigue::after  { background: linear-gradient(90deg,#dc2626,#fca5a5); }
-.ns-card.confused { border-left-color: #d97706; }
-.ns-card.confused::after { background: linear-gradient(90deg,#d97706,#fde68a); }
-.ns-card.focus    { border-left-color: #16a34a; }
-.ns-card.focus::after    { background: linear-gradient(90deg,#16a34a,#4ade80); }
-.ns-card.system   { border-left-color: #2563eb; }
-.ns-card.system::after   { background: linear-gradient(90deg,#2563eb,#93c5fd); }
+/* Shimmer overlay */
+.ns-card-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.5) 50%, transparent 60%);
+  background-size: 200% 100%;
+  animation: nsShimmer 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
 
+/* Type: fatigue */
+.ns-card.fatigue {
+  border-color: #fecaca;
+  background: linear-gradient(135deg, #fff8f8 0%, #ffffff 100%);
+  box-shadow: var(--ns-shadow-red);
+}
+.ns-card.fatigue::before { background: linear-gradient(180deg, #ef4444, #fca5a5); }
+.ns-card.fatigue::after  { background: linear-gradient(90deg, #ef4444, #fca5a5); }
+
+/* Type: confused */
+.ns-card.confused {
+  border-color: #fde68a;
+  background: linear-gradient(135deg, #fffdf0 0%, #ffffff 100%);
+  box-shadow: var(--ns-shadow-amber);
+}
+.ns-card.confused::before { background: linear-gradient(180deg, #f59e0b, #fde68a); }
+.ns-card.confused::after  { background: linear-gradient(90deg, #f59e0b, #fde68a); }
+
+/* Type: focus */
+.ns-card.focus {
+  border-color: #bbf7d0;
+  background: linear-gradient(135deg, #f8fff9 0%, #ffffff 100%);
+  box-shadow: var(--ns-shadow-green);
+}
+.ns-card.focus::before { background: linear-gradient(180deg, #22c55e, #86efac); }
+.ns-card.focus::after  { background: linear-gradient(90deg, #22c55e, #86efac); }
+
+/* Type: system */
+.ns-card.system {
+  border-color: #bfdbfe;
+  background: linear-gradient(135deg, #f8faff 0%, #ffffff 100%);
+  box-shadow: var(--ns-shadow-blue);
+}
+.ns-card.system::before { background: linear-gradient(180deg, #3b82f6, #93c5fd); }
+.ns-card.system::after  { background: linear-gradient(90deg, #3b82f6, #93c5fd); }
+
+/* ── Icon ── */
 .ns-icon {
-  flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px;
+  flex-shrink: 0;
+  width: 40px; height: 40px;
+  border-radius: 13px;
   display: flex; align-items: center; justify-content: center;
+  position: relative;
 }
-.ns-icon svg { width: 16px; height: 16px; }
+.ns-icon svg { width: 18px; height: 18px; }
+.ns-icon-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 16px;
+  border: 1.5px solid transparent;
+  animation: nsRingPulse 2s ease-in-out infinite;
+}
 
-.ns-card.fatigue  .ns-icon { background: #fef2f2; color: #dc2626; }
-.ns-card.confused .ns-icon { background: #fffbeb; color: #d97706; }
-.ns-card.focus    .ns-icon { background: #f0fdf4; color: #16a34a; }
-.ns-card.system   .ns-icon { background: #eff6ff; color: #2563eb; }
+.ns-card.fatigue  .ns-icon { background: linear-gradient(135deg,#fef2f2,#fee2e2); color: #dc2626; }
+.ns-card.fatigue  .ns-icon-ring { border-color: rgba(220,38,38,0.3); }
+.ns-card.confused .ns-icon { background: linear-gradient(135deg,#fffbeb,#fef3c7); color: #d97706; }
+.ns-card.confused .ns-icon-ring { border-color: rgba(217,119,6,0.3); }
+.ns-card.focus    .ns-icon { background: linear-gradient(135deg,#f0fdf4,#dcfce7); color: #16a34a; }
+.ns-card.focus    .ns-icon-ring { border-color: rgba(22,163,74,0.3); }
+.ns-card.system   .ns-icon { background: linear-gradient(135deg,#eff6ff,#dbeafe); color: #2563eb; }
+.ns-card.system   .ns-icon-ring { border-color: rgba(37,99,235,0.3); }
 
-.ns-body { flex: 1; min-width: 0; }
+/* ── Body ── */
+.ns-body { flex: 1; min-width: 0; padding-top: 1px; }
 
 .ns-title {
-  font-family: 'Familjen Grotesk', sans-serif;
-  font-size: .84rem; font-weight: 700; letter-spacing: -.01em;
-  color: #052e16; margin-bottom: 3px;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  margin-bottom: 3px;
 }
 .ns-card.fatigue  .ns-title { color: #7f1d1d; }
 .ns-card.confused .ns-title { color: #78350f; }
+.ns-card.focus    .ns-title { color: #14532d; }
 .ns-card.system   .ns-title { color: #1e3a8a; }
 
-.ns-msg { font-size: .74rem; color: #4d8c6a; line-height: 1.45; }
-.ns-card.fatigue  .ns-msg { color: #991b1b; opacity:.8; }
-.ns-card.confused .ns-msg { color: #92400e; opacity:.8; }
-.ns-card.system   .ns-msg { color: #1e40af; opacity:.8; }
-
-.ns-close {
-  flex-shrink: 0; background: none; border: none; cursor: pointer;
-  padding: 3px; border-radius: 6px; color: #9ca3af;
-  transition: color .15s, background .15s;
-  display: flex; align-items: center; justify-content: center; margin-top: 1px;
+.ns-msg {
+  font-size: 0.73rem;
+  line-height: 1.5;
+  font-weight: 500;
 }
-.ns-close:hover { color: #374151; background: #f3f4f6; }
+.ns-card.fatigue  .ns-msg { color: #b91c1c; opacity: 0.8; }
+.ns-card.confused .ns-msg { color: #92400e; opacity: 0.8; }
+.ns-card.focus    .ns-msg { color: #166534; opacity: 0.8; }
+.ns-card.system   .ns-msg { color: #1e40af; opacity: 0.8; }
+
+.ns-time {
+  font-size: 0.62rem;
+  font-weight: 600;
+  opacity: 0.45;
+  margin-top: 5px;
+  letter-spacing: 0.03em;
+}
+.ns-card.fatigue  .ns-time { color: #991b1b; }
+.ns-card.confused .ns-time { color: #92400e; }
+.ns-card.focus    .ns-time { color: #15803d; }
+.ns-card.system   .ns-time { color: #1e40af; }
+
+/* ── Close btn ── */
+.ns-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 26px; height: 26px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #9ca3af;
+  transition: all 0.18s;
+  margin-top: 1px;
+}
+.ns-close:hover {
+  background: rgba(0,0,0,0.06);
+  color: #374151;
+  transform: rotate(90deg);
+}
 .ns-close svg { width: 13px; height: 13px; }
 
-/* timestamp badge */
-.ns-time {
-  font-size: .62rem; color: #9ca3af; font-weight: 500; margin-top: 4px;
-}
-
-@keyframes nsIn {
-  from { opacity:0; transform:translateX(28px) scale(.95); }
-  to   { opacity:1; transform:none; }
+/* ── Keyframes ── */
+@keyframes nsSlideIn {
+  from { opacity: 0; transform: translateX(32px) scale(0.93); }
+  to   { opacity: 1; transform: none; }
 }
 @keyframes nsTimer {
-  from { transform:scaleX(1); }
-  to   { transform:scaleX(0); }
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+@keyframes nsShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes nsRingPulse {
+  0%, 100% { transform: scale(1);   opacity: 0.7; }
+  50%       { transform: scale(1.06); opacity: 0.2; }
 }
 `;
 
-export function NotificationSystem({ cognitiveState, focusMode }: NotificationSystemProps) {
+export function NotificationSystem({
+  cognitiveState,
+  focusMode,
+}: NotificationSystemProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [lastState, setLastState] = useState<CognitiveState>('focus');
+  const [lastState, setLastState] = useState<CognitiveState>("focus");
   const [focusStartTime, setFocusStartTime] = useState<number | null>(null);
 
-  const addNotification = useCallback((n: Omit<Notification, 'id' | 'timestamp'>) => {
-    if (focusMode && n.type !== 'fatigue') return;
-    const note: Notification = { ...n, id: Date.now().toString(), timestamp: Date.now() };
-    setNotifications(p => [note, ...p].slice(0, 5));
-    setTimeout(() => setNotifications(p => p.filter(x => x.id !== note.id)), 8000);
-  }, [focusMode]);
+  const addNotification = useCallback(
+    (n: Omit<Notification, "id" | "timestamp">) => {
+      if (focusMode && n.type !== "fatigue") return;
+      const note: Notification = {
+        ...n,
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: Date.now(),
+      };
+      setNotifications((p) => [note, ...p].slice(0, 5));
+      setTimeout(
+        () => setNotifications((p) => p.filter((x) => x.id !== note.id)),
+        8000,
+      );
+    },
+    [focusMode],
+  );
 
   useEffect(() => {
     if (cognitiveState !== lastState) {
-      if (cognitiveState === 'fatigue') {
-        addNotification({ type: 'fatigue', title: 'You seem tired 😴', message: 'Consider taking a 5-minute break to recharge.' });
-      } else if (cognitiveState === 'confused') {
-        addNotification({ type: 'confused', title: 'Need help? 🤔', message: 'Try breaking your task into smaller steps.' });
-      } else if (cognitiveState === 'focus' && lastState !== 'focus') {
-        addNotification({ type: 'focus', title: 'In the zone! ⚡', message: 'Great focus! Keep up the momentum.' });
+      if (cognitiveState === "fatigue") {
+        addNotification({
+          type: "fatigue",
+          title: "You seem tired 😴",
+          message: "Consider a 5-minute break to recharge your focus.",
+        });
+      } else if (cognitiveState === "confused") {
+        addNotification({
+          type: "confused",
+          title: "Need some help? 🤔",
+          message: "Try breaking your task into smaller steps.",
+        });
+      } else if (cognitiveState === "focus" && lastState !== "focus") {
+        addNotification({
+          type: "focus",
+          title: "In the zone! ⚡",
+          message: "Great focus detected. Keep up the momentum!",
+        });
         setFocusStartTime(Date.now());
       }
       setLastState(cognitiveState);
@@ -137,21 +280,30 @@ export function NotificationSystem({ cognitiveState, focusMode }: NotificationSy
   }, [cognitiveState, lastState, addNotification]);
 
   useEffect(() => {
-    if (focusMode && focusStartTime && cognitiveState === 'focus') {
+    if (focusMode && focusStartTime && cognitiveState === "focus") {
       const iv = setInterval(() => {
         const d = Date.now() - focusStartTime;
         if (d > 45 * 60000 && d < 46 * 60000) {
-          addNotification({ type: 'system', title: 'Focus Session Duration', message: "You've been focused for 45 minutes. Consider a break soon." });
+          addNotification({
+            type: "system",
+            title: "45-min Focus Session 🎯",
+            message: "Outstanding! Consider a short break to stay sharp.",
+          });
         }
       }, 60000);
       return () => clearInterval(iv);
     }
   }, [focusMode, focusStartTime, cognitiveState, addNotification]);
 
-  const remove = (id: string) => setNotifications(p => p.filter(n => n.id !== id));
+  const remove = (id: string) =>
+    setNotifications((p) => p.filter((n) => n.id !== id));
 
   const fmtTime = (ts: number) =>
-    new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    new Date(ts).toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
 
   if (notifications.length === 0) return null;
 
@@ -159,20 +311,24 @@ export function NotificationSystem({ cognitiveState, focusMode }: NotificationSy
     <>
       <style>{CSS}</style>
       <div className="ns-wrap">
-        {notifications.map(n => (
+        {notifications.map((n) => (
           <div key={n.id} className={`ns-card ${n.type}`}>
+            <div className="ns-card-shimmer" />
             <div className="ns-icon">
-              {n.type === 'fatigue'  && <Coffee />}
-              {n.type === 'confused' && <Brain />}
-              {n.type === 'focus'    && <Target />}
-              {n.type === 'system'   && <Bell />}
+              {n.type === "fatigue" && <Coffee />}
+              {n.type === "confused" && <Brain />}
+              {n.type === "focus" && <Target />}
+              {n.type === "system" && <Sparkles />}
+              <div className="ns-icon-ring" />
             </div>
             <div className="ns-body">
               <div className="ns-title">{n.title}</div>
               <div className="ns-msg">{n.message}</div>
               <div className="ns-time">{fmtTime(n.timestamp)}</div>
             </div>
-            <button className="ns-close" onClick={() => remove(n.id)}><X /></button>
+            <button className="ns-close" onClick={() => remove(n.id)}>
+              <X />
+            </button>
           </div>
         ))}
       </div>
