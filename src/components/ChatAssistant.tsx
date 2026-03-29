@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Activity,
   MessageSquare,
@@ -7,7 +7,10 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  Camera,
+  Eye,
 } from "lucide-react";
+import { MultiModalMoodDetector } from './MultiModalMoodDetector';
 
 type CognitiveState = "fatigue" | "confused" | "focus";
 
@@ -54,23 +57,6 @@ const INITIAL_TYPING: TypingSnapshot = {
   errorRate: 0,
 };
 
-const SIMPLE_RESPONSES = [
-  "Here is the short answer:\n- Main point: keep it simple\n- Next step: do one thing at a time",
-  "Simple version:\n1. Start small\n2. Finish one step\n3. Then continue",
-  "Quick answer: yes, this can work.\nJust do the basic version first.",
-];
-
-const GUIDED_RESPONSES = [
-  "Let me explain step by step:\n\n1. Understand the input\n2. Process it clearly\n3. Return the result\n4. Test with a small example",
-  "Here is the guided explanation:\n\nStep 1: Identify the problem\nStep 2: Break it into small parts\nStep 3: Solve one part at a time\nStep 4: Combine everything",
-  "Let’s make it easy:\n\n1. What goes in?\n2. What happens to it?\n3. What comes out?\n4. Test once and improve",
-];
-
-const ADVANCED_RESPONSES = [
-  "Here is the detailed answer:\n\n- First, define the input clearly.\n- Then apply the logic layer.\n- Add validation and fallback handling.\n- Finally, optimize for performance and edge cases.\n\nIn a real system, you should separate UI state, typing analysis, and response adaptation into distinct layers.",
-  "Deep explanation:\n\nThis works best when you treat cognitive-state detection as a heuristic model, not a truth detector. Use typing speed, correction rate, pause patterns, and recent trend analysis together. Then adapt response depth, structure, and tone from that state.",
-  "Advanced version:\n\nA clean design is:\n1. Capture live typing signals\n2. Compute metrics over the current draft\n3. Classify into fatigue / confused / focus\n4. Generate an answer style based on the class\n5. Re-evaluate every message instead of locking the user into one mode",
-];
 
 function getPlaceholderText(state: CognitiveState): string {
   if (state === "fatigue") return "Ask something... short replies mode";
@@ -108,24 +94,12 @@ function getStateBadge(state: CognitiveState) {
 function getWelcomeMessage(state: CognitiveState): string {
   switch (state) {
     case "fatigue":
-      return "Hi. I’ll keep answers short and simple.";
+      return "Hi! I can see you're tired. I'll keep my answers short and simple. 💤";
     case "confused":
-      return "Hi. I’ll explain things step by step.";
+      return "Hi! I'm here to help. I'll explain things step by step so it's easy to follow. 🎯";
     case "focus":
     default:
-      return "Hi. I can give you deeper and more detailed answers.";
-  }
-}
-
-function getStateTransitionMessage(state: CognitiveState): string {
-  switch (state) {
-    case "fatigue":
-      return "I’m switching to shorter and simpler replies.";
-    case "confused":
-      return "I’m switching to guided step-by-step replies.";
-    case "focus":
-    default:
-      return "I’m switching to deeper and more advanced replies.";
+      return "Hello! I'm ready to help with detailed, thoughtful answers. What would you like to explore? ⚡";
   }
 }
 
@@ -189,31 +163,175 @@ function detectCognitiveState(metrics: TypingSnapshot): {
   };
 }
 
-function buildAdaptiveResponse(
-  userMessage: string,
-  state: CognitiveState
-): string {
-  const trimmed = userMessage.trim();
+function buildAdaptiveResponse(userMessage: string, state: CognitiveState): string {
+  return generateRelevantResponse(userMessage, state);
+}
 
-  if (!trimmed) {
-    return "Please type a question first.";
+// ==== IMPROVED RESPONSE GENERATION ====
+
+interface IntentResult {
+  type: 'seeking_help' | 'seeking_direction' | 'question' | 'statement' | 'greeting' | 'farewell' | 'gratitude' | 'complaint' | 'small_talk';
+  topic: string;
+  urgency: 'low' | 'medium' | 'high';
+  sentiment: 'positive' | 'negative' | 'neutral';
+}
+
+function analyzeIntent(message: string): IntentResult {
+  const lower = message.toLowerCase().trim();
+  
+  // Check for greetings
+  if (lower.match(/^(hi|hello|hey|good morning|good afternoon|good evening|yo|hiya|howdy|what's up|sup)/)) {
+    return { type: 'greeting', topic: 'greeting', urgency: 'low', sentiment: 'positive' };
   }
-
-  if (state === "fatigue") {
-    const base =
-      SIMPLE_RESPONSES[Math.floor(Math.random() * SIMPLE_RESPONSES.length)];
-    return `${base}\n\nYour question: ${trimmed.slice(0, 120)}`;
+  
+  // Check for farewells
+  if (lower.match(/\b(bye|goodbye|see you|later|cya|ttyl|night|sleep)/)) {
+    return { type: 'farewell', topic: 'farewell', urgency: 'low', sentiment: 'neutral' };
   }
-
-  if (state === "confused") {
-    const base =
-      GUIDED_RESPONSES[Math.floor(Math.random() * GUIDED_RESPONSES.length)];
-    return `${base}\n\nI am structuring this clearly because your typing pattern suggests you may need guidance.`;
+  
+  // Check for gratitude
+  if (lower.match(/\b(thank|thanks|ty|appreciate|grateful|thx)/)) {
+    return { type: 'gratitude', topic: 'thanks', urgency: 'low', sentiment: 'positive' };
   }
+  
+  // Check for complaints/negativity
+  if (lower.match(/\b(hate|suck|terrible|awful|worst|annoying|frustrat|angry|mad|pissed|stupid)/)) {
+    return { type: 'complaint', topic: 'complaint', urgency: 'medium', sentiment: 'negative' };
+  }
+  
+  // Check for seeking direction (very specific pattern)
+  if (lower.match(/\b(what should i do|what do i do|what can i do|help me|i need help|i don't know what to do|i'm lost|guide me|advise me)\b/)) {
+    return { type: 'seeking_direction', topic: 'direction', urgency: 'high', sentiment: 'neutral' };
+  }
+  
+  // Check for seeking help
+  if (lower.match(/\b(help|stuck|problem|issue|error|wrong|not working|failed|can't|cannot|unable|fix|solve|broken)\b/)) {
+    return { type: 'seeking_help', topic: 'problem', urgency: 'high', sentiment: 'negative' };
+  }
+  
+  // Check for questions
+  if (lower.includes('?') || lower.match(/\b(what|how|why|when|where|who|which|can|could|would|will|do|does|is|are|did)\b/)) {
+    return { type: 'question', topic: 'question', urgency: 'medium', sentiment: 'neutral' };
+  }
+  
+  // Small talk patterns
+  if (lower.match(/\b(nice|cool|awesome|great|good|wow|oh|really|interesting)\b/) || message.length < 20) {
+    return { type: 'small_talk', topic: 'chat', urgency: 'low', sentiment: 'neutral' };
+  }
+  
+  return { type: 'statement', topic: 'statement', urgency: 'low', sentiment: 'neutral' };
+}
 
-  const base =
-    ADVANCED_RESPONSES[Math.floor(Math.random() * ADVANCED_RESPONSES.length)];
-  return `${base}\n\nYour question can be handled with more depth, so I’m giving you the richer version.`;
+function extractTopic(message: string): string {
+  const lower = message.toLowerCase();
+  
+  const topicPatterns = [
+    { pattern: /\b(food|eat|hungry|cook|meal|recipe|breakfast|lunch|dinner|snack)\b/, topic: 'food' },
+    { pattern: /\b(code|program|javascript|python|react|angular|vue|html|css|bug|error|debug|api|database|server|tech|software|app|website)\b/, topic: 'technology' },
+    { pattern: /\b(work|job|project|task|assignment|deadline|meeting|boss|client|office|business|career)\b/, topic: 'work' },
+    { pattern: /\b(learn|study|education|school|college|course|class|exam|test|homework|knowledge)\b/, topic: 'learning' },
+    { pattern: /\b(time|date|day|schedule|calendar|plan|organize)\b/, topic: 'planning' },
+    { pattern: /\b(feel|feeling|emotion|happy|sad|angry|anxious|stressed|worried|excited)\b/, topic: 'emotions' },
+    { pattern: /\b(weather|rain|sunny|cold|hot|temperature|forecast)\b/, topic: 'weather' },
+    { pattern: /\b(movie|film|show|tv|series|netflix|watch)\b/, topic: 'entertainment' },
+    { pattern: /\b(music|song|listen|playlist|artist|band|album)\b/, topic: 'music' },
+    { pattern: /\b(book|read|novel|story|author|literature)\b/, topic: 'reading' },
+    { pattern: /\b(game|gaming|play|video game|pc|console|xbox|playstation|nintendo)\b/, topic: 'gaming' },
+    { pattern: /\b(sport|exercise|workout|gym|fitness|run|walk|health)\b/, topic: 'health' },
+    { pattern: /\b(travel|trip|vacation|holiday|flight|hotel|visit|place)\b/, topic: 'travel' },
+    { pattern: /\b(money|finance|budget|save|invest|expense|income|salary)\b/, topic: 'finance' },
+  ];
+  
+  for (const { pattern, topic } of topicPatterns) {
+    if (pattern.test(lower)) return topic;
+  }
+  
+  return 'general';
+}
+
+function generateRelevantResponse(message: string, state: CognitiveState): string {
+  const intent = analyzeIntent(message);
+  const topic = extractTopic(message);
+  
+  switch (intent.type) {
+    case 'greeting':
+      if (state === 'fatigue') return "Hi there! 👋 I can see you're tired. I'll keep things brief. What do you need help with? 💤";
+      if (state === 'confused') return "Hello! 😊 I'm here to help you work through whatever you need. What would you like to tackle together?";
+      return "Hello! 🌟 I'm ready to help with whatever you're working on. What's on your mind today?";
+    
+    case 'farewell':
+      if (state === 'fatigue') return "Take care! Get some rest. 💤";
+      if (state === 'confused') return "Goodbye! Remember, you can always come back if you need help. 😊";
+      return "Goodbye! Feel free to return anytime you want to explore ideas together. 👋";
+    
+    case 'gratitude':
+      if (state === 'fatigue') return "You're welcome! Rest up! 💤";
+      if (state === 'confused') return "You're very welcome! Let me know if you need more help. 😊";
+      return "You're welcome! Happy to help anytime. 🙏";
+    
+    case 'complaint':
+      if (state === 'fatigue') return "I hear you. That sounds frustrating. Take a breath, then tell me what's wrong - I'll help. 💤";
+      if (state === 'confused') return "I can tell you're frustrated. Let's slow down and figure this out together. What specifically is bothering you? 🤔";
+      return "I understand your frustration. Let me help you work through this. What's the main issue you're facing? 💪";
+    
+    case 'seeking_direction':
+      if (state === 'fatigue') {
+        return `I hear you asking "what should I do?" 💤\n\nWhen you're tired, the best approach is:\n• Do the smallest next step\n• Rest after 25 minutes\n• Choose the option that requires least energy\n\nWhat specific situation are you deciding about?`;
+      }
+      if (state === 'confused') {
+        return `You're wondering what to do - let's figure it out together! 🎯\n\n**Step 1: What are your options?**\nList 2-3 possible choices\n\n**Step 2: What's most important?**\n- Quick result?\n- Easy to do?\n- Best long-term outcome?\n\n**Step 3: Try the simplest option first**\n\nWhat decision are you trying to make?`;
+      }
+      return `You're seeking direction. Let me help you think through this systematically. 🧭\n\n**Decision Framework:**\n\n1. **Clarify the Goal**\n   What outcome are you trying to achieve?\n\n2. **Identify Constraints**\n   - Time available\n   - Resources available\n   - Energy level\n\n3. **Generate Options**\n   Brainstorm without judging\n\n4. **Evaluate & Choose**\n   Which aligns with your priorities?\n\nWhat specific situation are you navigating?`;
+    
+    case 'seeking_help':
+      if (state === 'fatigue') {
+        return `I can help! Since you seem tired, let's keep it simple:\n\n**Quick troubleshooting:**\n1. What broke? (one sentence)\n2. When did it last work?\n3. What's the simplest fix to try first?\n\nTell me these and I'll guide you. 💤`;
+      }
+      if (state === 'confused') {
+        return `I'm here to help you solve this! 🎯\n\n**Let's break it down:**\n\n**What exactly is the problem?**\nDescribe what you see happening\n\n**What have you tried so far?**\nSo I don't suggest things you've already done\n\nDon't worry - we'll figure this out step by step! What can you tell me about the problem?`;
+      }
+      return `I'll help you solve this systematically. 🔧\n\n**Problem-Solving Framework:**\n\n**Phase 1: Understand**\n• What's the expected behavior?\n• What's actually happening?\n• When did this start?\n\n**Phase 2: Isolate**\n• Can you reproduce it?\n• What are the minimal steps?\n\n**Phase 3: Test & Fix**\n• Try the most likely fix\n• Verify it works\n\nWhat problem are you facing?`;
+    
+    case 'small_talk':
+      if (state === 'fatigue') return "I'm here! 💤 What do you need?";
+      if (state === 'confused') return "I'm listening! What would you like to chat about or work on? 😊";
+      return "I'm here and ready to chat or help with anything! What's on your mind? 💬";
+    
+    default:
+      break;
+  }
+  
+  // Topic-based responses
+  switch (topic) {
+    case 'food':
+      if (state === 'fatigue') return "Food! Keep it simple - maybe something quick like eggs or a sandwich. What do you have available? 🍳💤";
+      if (state === 'confused') return "Hungry? 🍽️\n\nLet's decide simply:\n• Do you want to cook or order?\n• Sweet or savory?\n\nWhat sounds good?";
+      return `You mentioned food! 🍽️\n\n**Quick Options:**\n• Make something with what you have\n• Order from a favorite place\n• Try a new recipe\n\n**What are you in the mood for?**`;
+    
+    case 'technology':
+      if (state === 'fatigue') return "Tech stuff! 💻 Keep it simple - one small fix at a time. What specifically is the error or problem?";
+      if (state === 'confused') return "Tech can be tricky! 💻\n\n**What are you trying to build or fix?**\n\nTell me:\n• The programming language\n• What error you see\n• What you want to happen\n\nI'll break it down!";
+      return `Technical question! 💻\n\nI can help with:\n• Debugging code\n• Architecture decisions\n• Learning new technologies\n\n**What specifically do you need help with?**`;
+    
+    case 'work':
+      if (state === 'fatigue') return "Work stuff when tired... tackle one small task, then rest. What's the most urgent thing? 🏢💤";
+      if (state === 'confused') return "Work can be overwhelming! 🏢\n\n**What task is confusing you?**\n\nTell me:\n• What you need to do\n• What's unclear\n• When it's due\n\nWe'll make a simple plan!";
+      return `Work topic! 🏢\n\nI can help with:\n• Task prioritization\n• Project planning\n• Difficult conversations\n\n**What's your work situation?**`;
+    
+    case 'emotions':
+      if (state === 'fatigue') return "Feelings when tired hit harder. Be gentle with yourself. What's going on? 💙💤";
+      if (state === 'confused') return "Emotions can be confusing! 💙\n\n**Let's sort it out:**\n\n1. Name the feeling\n2. What triggered it?\n3. What do you need right now?\n\nI'm here to listen.";
+      return `You mentioned feelings. 💙\n\nI can help you:\n• Process emotions\n• Find coping strategies\n• Understand triggers\n\n**What are you experiencing?**`;
+    
+    default:
+      if (state === 'fatigue') {
+        return `You asked: "${message.slice(0, 50)}${message.length > 50 ? '...' : ''}"\n\nQuick answer: Focus on one small thing. Rest often. What specific part do you need help with? 💤`;
+      }
+      if (state === 'confused') {
+        return `You asked: "${message.slice(0, 50)}${message.length > 50 ? '...' : ''}"\n\nLet me help! Can you tell me:\n• What you're trying to do\n• Where you got stuck\n• What you've tried\n\nI'll break it down! 🤔`;
+      }
+      return `You asked: "${message}"\n\nTell me more about the context:\n• What's your background with this?\n• What have you tried?\n• What outcome do you want?\n\nThen I can give you a helpful response! 🎯`;
+  }
 }
 
 export default function ChatAssistant({
@@ -226,6 +344,9 @@ export default function ChatAssistant({
   const [typingMetrics, setTypingMetrics] = useState<TypingSnapshot>(INITIAL_TYPING);
   const [detectedState, setDetectedState] = useState<CognitiveState>(cognitiveState);
   const [detectedConfidence, setDetectedConfidence] = useState<number>(0.6);
+
+  const [multiModalEnabled, setMultiModalEnabled] = useState(false);
+  const [lastMultiModalState, setLastMultiModalState] = useState<CognitiveState | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const prevDetectedStateRef = useRef<CognitiveState>(cognitiveState);
@@ -253,39 +374,20 @@ export default function ChatAssistant({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTypingReply]);
 
-  useEffect(() => {
-    if (input.trim().length < 6 || typingMetrics.keystrokeCount < 5) return;
-
-    const result = detectCognitiveState(typingMetrics);
-    setDetectedState(result.state);
-    setDetectedConfidence(result.confidence);
-  }, [typingMetrics, input]);
-
-  useEffect(() => {
-    if (effectiveState !== prevDetectedStateRef.current && input.trim().length >= 6) {
-      const transitionMessage: Message = {
-        id: `transition-${Date.now()}`,
-        role: "assistant",
-        content: getStateTransitionMessage(effectiveState),
-        adaptedFor: effectiveState,
-        timestamp: Date.now(),
-      };
-
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (
-          last &&
-          last.role === "assistant" &&
-          last.content === transitionMessage.content
-        ) {
-          return prev;
-        }
-        return [...prev, transitionMessage];
-      });
-
-      prevDetectedStateRef.current = effectiveState;
+  const handleMultiModalMood = useCallback((mood: {
+    typing: CognitiveState;
+    visual: string | null;
+    audio: string | null;
+    combined: CognitiveState;
+    confidence: number;
+  }) => {
+    // Only update if multi-modal confidence is significantly higher
+    if (mood.confidence > 0.7 && mood.combined !== lastMultiModalState) {
+      setLastMultiModalState(mood.combined);
+      setDetectedState(mood.combined);
+      setDetectedConfidence(mood.confidence);
     }
-  }, [effectiveState, input]);
+  }, [lastMultiModalState]);
 
   const resetTypingMetrics = () => {
     setTypingMetrics(INITIAL_TYPING);
@@ -405,20 +507,49 @@ export default function ChatAssistant({
   };
 
   const startVoiceInput = () => {
-    setIsRecording(true);
-
-    // Fake voice capture placeholder.
-    // Replace with Web Speech API if you want real voice input.
-    window.setTimeout(() => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      setInput(prev => prev ? `${prev} [Voice not supported]` : '[Voice input requires a modern browser]');
+      return;
+    }
+    
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    
+    recognition.onstart = () => {
+      setIsRecording(true);
+    };
+    
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(prev => prev ? `${prev} ${transcript}` : transcript);
       setIsRecording(false);
-      setInput((prev) =>
-        prev ? `${prev} voice input text` : "voice input text"
-      );
-    }, 1800);
+    };
+    
+    recognition.onerror = () => {
+      setIsRecording(false);
+    };
+    
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+    
+    recognition.start();
   };
 
   return (
     <div className="flex h-full flex-col">
+      {/* Multi-Modal Mood Detector */}
+      {multiModalEnabled && (
+        <MultiModalMoodDetector 
+          onMoodDetected={handleMultiModalMood}
+          enabled={multiModalEnabled}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between border-b border-primary-100 p-4 dark:border-gray-800">
         <div className="flex items-center gap-3">
@@ -451,6 +582,20 @@ export default function ChatAssistant({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Multi-modal toggle */}
+          <button
+            onClick={() => setMultiModalEnabled(!multiModalEnabled)}
+            className={`rounded-lg p-2 transition-colors ${
+              multiModalEnabled 
+                ? "bg-green-100 text-green-700" 
+                : "text-gray-500 hover:bg-primary-50 hover:text-primary-600"
+            }`}
+            title="Toggle camera & voice mood detection"
+            type="button"
+          >
+            <Camera className="h-5 w-5" />
+          </button>
+
           <div className="hidden items-center gap-2 rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400 md:flex">
             <Activity className="h-3 w-3" />
             <span>WPM: {Math.round(typingMetrics.currentWpm)}</span>
@@ -458,6 +603,13 @@ export default function ChatAssistant({
             <span>Errors: {(typingMetrics.errorRate * 100).toFixed(0)}%</span>
             <span className="text-gray-400">|</span>
             <span>Pauses: {typingMetrics.longPauses}</span>
+            {multiModalEnabled && (
+              <>
+                <span className="text-gray-400">|</span>
+                <Eye className="h-3 w-3 text-green-600" />
+                <span className="text-green-600">Multi-modal</span>
+              </>
+            )}
           </div>
 
           <button

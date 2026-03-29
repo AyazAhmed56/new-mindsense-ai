@@ -278,8 +278,6 @@ export function MainLayout() {
               <ChatAssistant 
                 cognitiveState={cognitiveState} 
                 confidence={stateConfidence}
-                baseline={baseline}
-                behaviorTracker={behaviorTracker}
               />
             )}
             {activeTab === 'dashboard' && <Dashboard behaviorTracker={behaviorTracker} />}
